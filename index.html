@@ -1,36 +1,52 @@
+<!-- ...existing code... -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora Simple</title>
-    <link rel="stylesheet" href="stiles.css"> <!-- Enlaza el archivo CSS -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Calculadora de la Verdad — Detallada</title>
+  <link rel="stylesheet" href="stiles.css">
 </head>
 <body>
-    <script src="scrip.js">HTMLScriptElement</script>
-    <div class="calculadora">
-        <input type="text" id="pantalla" readonly> <!-- Pantalla de solo lectura -->
-        <div class="botones">
-            <button onclick="limpiarPantalla()">C</button>
-            <button onclick="agregarValor('/')">/</button>
-            <button onclick="agregarValor('*')">*</button>
-            <button onclick="borrarUltimo()">←</button>
-            <button onclick="agregarValor('7')">7</button>
-            <button onclick="agregarValor('8')">8</button>
-            <button onclick="agregarValor('9')">9</button>
-            <button onclick="agregarValor('-')">-</button>
-            <button onclick="agregarValor('4')">4</button>
-            <button onclick="agregarValor('5')">5</button>
-            <button onclick="agregarValor('6')">6</button>
-            <button onclick="agregarValor('+')">+</button>
-            <button onclick="agregarValor('1')">1</button>
-            <button onclick="agregarValor('2')">2</button>
-            <button onclick="agregarValor('3')">3</button>
-            <button onclick="calcularResultado()" class="igual">=</button>
-            <button onclick="agregarValor('0')" class="cero">0</button>
-            <button onclick="agregarValor('.')">.</button>
-        </div>
-    </div>
-    <script src="script.js"></script> <!-- Enlaza el archivo JavaScript -->
+  <main class="wrap">
+    <header><h1>Calculadora de la Verdad</h1></header>
+
+    <section class="calculadora">
+      <input id="pantalla" type="text" aria-label="Pantalla de la calculadora" />
+
+      <div class="botones-grid">
+        <button onclick="agregarValor('(')">(</button>
+        <button onclick="agregarValor(')')">)</button>
+        <button onclick="moverIzquierda()">◀</button>
+        <button onclick="moverDerecha()">▶</button>
+
+        <button onclick="agregarValor('P')">P</button>
+        <button onclick="agregarValor('Q')">Q</button>
+        <button onclick="agregarValor('R')">R</button>
+        <button onclick="agregarValor('S')">S</button>
+
+        <button onclick="agregarValor('↔')">↔</button>
+        <button onclick="agregarValor('⊕')">⊕</button>
+        <button onclick="agregarValor('¬')">¬</button>
+        <button onclick="limpiarPantalla()">AC</button>
+
+        <button onclick="agregarValor('∧')">∧</button>
+        <button onclick="agregarValor('∨')">∨</button>
+        <button onclick="agregarValor('→')">→</button>
+        <button onclick="borrarUltimo()">DEL</button>
+
+        <button class="igual" onclick="calcularResultado()">=</button>
+      </div>
+
+      <div id="tablaWrap">
+        <table id="tabla" aria-live="polite"></table>
+      </div>
+
+      <section id="detalles" class="detalles"></section>
+    </section>
+  </main>
+
+  <script src="scrip.js"></script>
 </body>
 </html>
+<!-- ...existing code... -->
