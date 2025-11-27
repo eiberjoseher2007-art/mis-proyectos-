@@ -85,6 +85,14 @@ function applyOp(op,a,b){
   throw new Error("Operador no soportado: "+op);
 }
 
+function displayOp(op){
+  return op === '~' ? '¬' :
+         op === '&' ? '∧' :
+         op === '|' ? '∨' :
+         op === '^' ? '⊕' :
+         op === '->' ? '→' :
+         op === '<->' ? '↔' : op;
+}
 function boolText(v){ return v ? 'V' : 'F'; }
 function opName(op){
   return op === '~' ? 'NO' :
@@ -95,74 +103,102 @@ function opName(op){
          op === '<->' ? 'EQUIVALENCIA' : op;
 }
 
-// Evalúa RPN y devuelve {value, trace} donde trace es array de pasos (strings con V/F)
-function evalRPNWithTrace(rpn, env){
+// Construye lista de nodos (variables ordenadas + subexpresiones en orden de evaluación)
+// nodos: { id, label, op?, childrenIndexes? }
+function buildNodeList(rpn, varsSorted){
+  const varNodes = {};
+  varsSorted.forEach(v => { varNodes[v] = { id: 'v:'+v, label: v, type: 'var', name: v }; });
   const stack = [];
-  const trace = [];
+  const intermediates = [];
   for (const tok of rpn){
     if (tok in OPERATORS){
       const ar = OPERATORS[tok].arity;
       if (ar === 1){
         const a = stack.pop();
-        const res = applyOp(tok, a);
-        trace.push(`Se aplica ${opName(tok)} (${tok}) al valor ${boolText(a)} → resultado ${boolText(res)}.`);
-        stack.push(res);
+        const label = `${displayOp(tok)}${a.label}`;
+        const node = { id: 'n:'+intermediates.length, label, type:'op', op:tok, children: [a] };
+        intermediates.push(node);
+        stack.push(node);
       } else {
         const b = stack.pop(); const a = stack.pop();
-        const res = applyOp(tok, a, b);
-        trace.push(`Se aplican ${opName(tok)} (${tok}) a ${boolText(a)} y ${boolText(b)} → resultado ${boolText(res)}.`);
-        stack.push(res);
+        const label = `(${a.label}${displayOp(tok)}${b.label})`;
+        const node = { id: 'n:'+intermediates.length, label, type:'op', op:tok, children: [a,b] };
+        intermediates.push(node);
+        stack.push(node);
       }
     } else {
-      const val = Boolean(env[tok]);
-      stack.push(val);
-      trace.push(`Variable ${tok} = ${boolText(val)} (se coloca en la pila).`);
+      stack.push(varNodes[tok]);
     }
   }
-  if (stack.length !== 1) throw new Error("Expresión inválida");
-  return { value: stack[0], trace };
+  // order: variables (in varsSorted) then intermediates in creation order
+  const nodes = varsSorted.map(v => varNodes[v]).concat(intermediates);
+  return nodes;
 }
 
-function evalRPN(rpn, env){
-  return evalRPNWithTrace(rpn, env).value;
+// Evalúa lista de nodos para un env y produce valores y explicaciones
+function evalNodesAndExplain(nodes, env){
+  const values = {};
+  const steps = [];
+  // variables first
+  for (const node of nodes){
+    if (node.type === 'var'){
+      const v = Boolean(env[node.name]);
+      values[node.id] = v;
+      steps.push(`Variable ${node.label} = ${boolText(v)}.`);
+    } else {
+      // children are references to earlier nodes (objects) - find their ids and values
+      const childVals = node.children.map(ch => values[ch.id]);
+      let res;
+      if (node.children.length === 1){
+        res = applyOp(node.op, childVals[0]);
+        steps.push(`${node.label} = ${boolText(res)}  (porque ${opName(node.op)} ${childVals.map(boolText).join('')})`);
+      } else {
+        res = applyOp(node.op, childVals[0], childVals[1]);
+        steps.push(`${node.label} = ${boolText(res)}  (porque ${opName(node.op)}: ${node.children[0].label}=${boolText(childVals[0])}, ${node.children[1].label}=${boolText(childVals[1])})`);
+      }
+      values[node.id] = res;
+    }
+  }
+  // produce row values in same node order
+  const row = nodes.map(n => boolText(values[n.id]));
+  return { row, steps };
 }
 
 function findVars(tokens){ const vars = []; for (const t of tokens) if (/^[A-Za-z_]\w*$/.test(t) && !vars.includes(t)) vars.push(t); return vars; }
 
-function generarFilasYDetalles(vars, rpn){
-  const n = vars.length; const rows = []; const details = [];
-  const combos = 1 << n;
+function generarFilasYDetallesConNodos(vars, rpn){
+  const nodes = buildNodeList(rpn, vars);
+  const rows = [];
+  const details = [];
+  const combos = 1 << vars.length;
   for (let i=0;i<combos;i++){
-    const env = {}; for (let j=0;j<n;j++) env[vars[j]] = !!(i & (1<<(n-1-j)));
-    let val, trace;
-    try { const res = evalRPNWithTrace(rpn, env); val = res.value; trace = res.trace; }
-    catch(e){ val = "ERR"; trace = [ "ERROR: " + e.message ]; }
-    rows.push(vars.map(v => boolText(env[v]) ).concat([ (typeof val === 'boolean') ? boolText(val) : String(val) ]));
-    details.push({
-      combo: env,
-      rpn: rpn.slice(),
-      trace
-    });
+    const env = {};
+    for (let j=0;j<vars.length;j++) env[vars[j]] = !!(i & (1 << (vars.length - 1 - j)));
+    const { row, steps } = evalNodesAndExplain(nodes, env);
+    rows.push(row);
+    details.push({ combo: env, steps });
   }
-  return { rows, details };
+  return { nodes, rows, details };
 }
 
-function renderTablaConDetalles(vars, rows, details, expr, tokens, rpn){
-  // tabla con V/F y explicaciones en la misma tabla: cada fila seguida por una fila de detalle
-  let html = '<thead><tr>' + vars.map(h=>`<th>${escapeHtml(h)}</th>`).join('') + `<th>${escapeHtml(expr)}</th></tr></thead><tbody>`;
-  for (let i = 0; i < rows.length; i++) {
+function renderTablaExplicativa(nodes, rows, details, expr, tokens, rpn){
+  // header
+  const headers = nodes.map(n => n.label);
+  let html = '<thead><tr>' + headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead><tbody>';
+  for (let i=0;i<rows.length;i++){
     const row = rows[i];
     html += '<tr>' + row.map(c=>`<td>${escapeHtml(c)}</td>`).join('') + '</tr>';
-    // fila de detalle con explicación paso a paso
-    const detailText = details[i].trace.join('\n');
-    html += `<tr class="detalle-row"><td colspan="${vars.length + 1}"><strong>Explicación paso a paso:</strong>\n<pre>${escapeHtml(detailText)}</pre></td></tr>`;
+    // detalle en la misma tabla: explicacion paso a paso
+    const detailHtml = details[i].steps.map(s => escapeHtml(s)).join('<br>');
+    html += `<tr class="detalle-row"><td colspan="${headers.length}"><strong>Explicación paso a paso:</strong><br>${detailHtml}</td></tr>`;
   }
   html += '</tbody>';
   tablaEl.innerHTML = html;
 
-  // además mostrar tokens y RPN arriba de la tabla (en el mismo cuadro de resultados)
-  const meta = `<div class="meta"><p><strong>Tokens:</strong> ${escapeHtml(tokens.join(' '))}</p><p><strong>RPN:</strong> ${escapeHtml(rpn.join(' '))}</p></div>`;
-  detallesEl.innerHTML = meta;
+  // meta (tokens + RPN) y expresión original
+  detallesEl.innerHTML = `<p><strong>Expresión:</strong> ${escapeHtml(expr)}</p>
+    <p><strong>Tokens:</strong> ${escapeHtml(tokens.join(' '))}</p>
+    <p><strong>RPN:</strong> ${escapeHtml(rpn.join(' '))}</p>`;
 }
 
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -173,7 +209,7 @@ function calcularResultado(){
   let tokens, rpn, vars;
   try{
     tokens = tokenize(expr);
-    vars = findVars(tokens); vars.sort();
+    vars = findVars(tokens); vars.sort(); // sort variables to have consistent left-to-right order
     rpn = shuntingYard(tokens);
   } catch(e){
     tablaEl.innerHTML = `<caption>Error de parseo: ${escapeHtml(e.message)}</caption>`; detallesEl.innerHTML = ''; return;
@@ -181,18 +217,19 @@ function calcularResultado(){
 
   if (vars.length === 0){
     try {
-      const traceRes = evalRPNWithTrace(rpn, {});
-      const val = traceRes.value;
-      tablaEl.innerHTML = `<caption>Resultado: ${escapeHtml(boolText(val))}</caption>`;
-      detallesEl.innerHTML = `<div class="meta"><p><strong>RPN:</strong> ${escapeHtml(rpn.join(' '))}</p><pre>${escapeHtml(traceRes.trace.join('\n'))}</pre></div>`;
+      // build nodes (only final node) to get label
+      const nodes = buildNodeList(rpn, []);
+      const { row, steps } = evalNodesAndExplain(nodes, {});
+      tablaEl.innerHTML = `<caption>Resultado: ${escapeHtml(row[row.length-1])}</caption>`;
+      detallesEl.innerHTML = `<p><strong>RPN:</strong> ${escapeHtml(rpn.join(' '))}</p><pre>${escapeHtml(steps.join('\n'))}</pre>`;
       return;
     } catch(e){
       tablaEl.innerHTML = `<caption>Error de evaluación: ${escapeHtml(e.message)}</caption>`; detallesEl.innerHTML = ''; return;
     }
   }
 
-  const { rows, details } = generarFilasYDetalles(vars, rpn);
-  renderTablaConDetalles(vars, rows, details, expr, tokens, rpn);
+  const { nodes, rows, details } = generarFilasYDetallesConNodos(vars, rpn);
+  renderTablaExplicativa(nodes, rows, details, expr, tokens, rpn);
 }
 
 // bloquear escritura directa salvo movimientos/backspace/ctrl
